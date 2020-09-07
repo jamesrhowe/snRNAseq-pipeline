@@ -1,0 +1,70 @@
+---
+title: "Supervised Clustering"
+name: "James Howe"
+date: "2020-08-31"
+output: html_notebook
+---
+
+Optional: install hicat and dependencies
+
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("limma")
+
+devtools::install_github("JinmiaoChenLab/Rphenograph")
+devtools::install_github("AllenInstitute/scrattch.hicat")
+```
+
+Load in the data
+
+Need to cut down the array in order to reduce the overall memory burden when parallelizing.
+
+```{r}
+array <- readRDS("../datasets/merge_normalize/plCoA_mergenormalize.rds")
+array <- array@assays$SCT@data
+gc()
+```
+
+Cluster via hicat
+
+```{r}
+require("scrattch.hicat")
+require("Rcpp")
+require("Seurat")
+
+de.param <- de_param(de.score.th = 100,
+                     q1.th = 0.3,
+                     q.diff.th = 0.7,
+                     lfc.th = 0.7,
+                     min.cells = 20)
+
+clusters <- run_consensus_clust(array, 
+                                niter = 40,
+                                mc.cores = 4,
+                                de.param = de.param,
+                                max.dim = 50,
+                                dim.method = "pca",
+                                output_dir = "../clustering/temp_cluster_plCoA")
+
+array <- readRDS("../datasets/merge_normalize/plCoA_mergenormalize.rds")
+array <- AddMetaData(array, metadata = clusters$cl.result$cl, col.name = "Cluster")
+```
+
+Plot clusters
+
+```{r}
+DimPlot(array, group.by = "region")
+DimPlot(array, group.by = "Cluster", label = TRUE)
+```
+
+Plot co-clustering matrix
+
+```{r}
+
+consensus.cl <- compare.result$cl
+consensus.cl.df <- compare.result$cl.df
+
+co.ratio <- result$co.result$co.ratio
+co.matrix.plot <- plot_confusion(clusters$cl.result$cl)
+```
