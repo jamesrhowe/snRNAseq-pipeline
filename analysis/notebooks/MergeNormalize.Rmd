@@ -25,21 +25,20 @@ Combines the outputs of all preprocessed libraries into a single list. This requ
 id <- params$group
 array <- list()
 
-# read in the data, requires manual changes
-array[[1]] <- readRDS("../../datasets/preprocessed/ASt-1_preprocessed.rds")
-array[[2]] <- readRDS("../../datasets/preprocessed/ASt-2_preprocessed.rds")
+file_names <- list.files(path = "../../datasets/preprocessed/", pattern = "*.rds", full.names = TRUE)
+for (i in 1:length(file_names)){
+  array[[i]] <- readRDS(file_names[i])
+  
+}
+merged <- Reduce(function(...) merge(..., all=T), array)
 
-# merge arrays, requires manual changes
-array <- merge(x= array[[1]], 
-               y = list(array[[2]]))
-
-paste("Total", id, "cells:", length(colnames(array)))
+paste("Total", id, "cells:", length(colnames(merged)))
 count_all(paste(id, "cell"))
 
-plot_array <- cbind.data.frame(array$nCount_RNA, 
-                               array$nFeature_RNA,
-                               array$orig.ident,
-                               colnames(array))
+plot_array <- cbind.data.frame(merged$nCount_RNA, 
+                               merged$nFeature_RNA,
+                               merged$orig.ident,
+                               colnames(merged))
 colnames(plot_array) <- c("UMIs", "Features", "Batch", "Cell_ID")
 
 plot_ly(data = plot_array, x = ~UMIs, y = ~Features, color = ~Batch, text = ~Cell_ID) %>%
@@ -52,14 +51,14 @@ plot_ly(data = plot_array, x = ~UMIs, y = ~Features, color = ~Batch, text = ~Cel
 Removal of non-expressed genes de-noises the array and improves downstream pipeline performance. This step eliminates all genes expressed in fewer than 5 cells, a very lenient cutoff.
 
 ```{r 2-gene_filter, warning = FALSE, message = FALSE}
-plot_array <- cbind.data.frame(Matrix::rowMeans(array@assays$RNA@counts),
-                               Matrix::rowSums(array@assays$RNA@counts != 0),
-                               ifelse(Matrix::rowSums(array@assays$RNA@counts != 0) > 5, 
+plot_array <- cbind.data.frame(Matrix::rowMeans(merged@assays$RNA@counts),
+                               Matrix::rowSums(merged@assays$RNA@counts != 0),
+                               ifelse(Matrix::rowSums(merged@assays$RNA@counts != 0) > 5, 
                                       "<5 Cells Expressing", ">5 Cells Expressing"),
-                               rownames(array))
+                               rownames(merged))
 colnames(plot_array) <- c("Mean", "Total_cells", "Filter", "Gene_ID")
 
-array <- subset(array, features = which(Matrix::rowSums(array) > 5))
+merged <- subset(merged, features = which(Matrix::rowSums(merged) > 5))
 
 count_all(paste(id, "cells after gene filter"))
 
@@ -76,13 +75,13 @@ SCTransform, introduced in [Hafemeister et  al., 2019](https://genomebiology.bio
 
 ```{r 3-sctransform, warning = FALSE, message = TRUE}
 # needs conserve.memory = TRUE, or else it crashes R session on laptop
-array <- SCTransform(array, variable.features.n = 5000, 
+merged <- SCTransform(merged, variable.features.n = 5000, 
                      conserve.memory = TRUE, verbose = FALSE)
 
-plot_array <- cbind.data.frame(array@assays$SCT@meta.features$sct.gmean,
-                               array@assays$SCT@meta.features$sct.residual_variance,
-                               ifelse(array@assays$SCT@meta.features$sct.variable, "Variable", "Non-variable"),
-                               rownames(array))
+plot_array <- cbind.data.frame(merged@assays$SCT@meta.features$sct.gmean,
+                               merged@assays$SCT@meta.features$sct.residual_variance,
+                               ifelse(merged@assays$SCT@meta.features$sct.variable, "Variable", "Non-variable"),
+                               rownames(merged))
 colnames(plot_array) <- c("Geometric_Mean", "Residual_Variance", "Variable_Feature", "Gene_ID")
 
 plot_ly(data = plot_array) %>%
@@ -96,21 +95,21 @@ plot_ly(data = plot_array) %>%
 Most downstream analysis steps, such as nonlinear dimensionality reduction, clustering, and respective dependent analyses, require PCA to be performed first. Seurat calculates the first 50 PCs, and we do not need to go deeper than that in most cases. According to [Germain et al., 2020](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-02136-7), the irlba version in Seurat performs best. Plot here is sanity check for batch effects, ensuring all batches align in PC space.
 
 ```{r 4-pca, warning = FALSE, message = TRUE}
-array <- RunPCA(array, verbose = FALSE)
+merged <- RunPCA(merged, verbose = FALSE)
 
-plot_array <- cbind.data.frame(array@reductions$pca@cell.embeddings[,1:3], 
-                               array$orig.ident,
-                               colnames(array))
+plot_array <- cbind.data.frame(merged@reductions$pca@cell.embeddings[,1:3], 
+                               merged$orig.ident,
+                               colnames(merged))
 colnames(plot_array) <- c("PC1", "PC2", "PC3", "Batch", "Cell_ID")
 
 # visualize PC weights and gene contributions to PCs
-ElbowPlot(array)
-VizDimLoadings(array, dims = 1, reduction = "pca")
-VizDimLoadings(array, dims = 10, reduction = "pca")
-VizDimLoadings(array, dims = 20, reduction = "pca")
-VizDimLoadings(array, dims = 30, reduction = "pca")
-VizDimLoadings(array, dims = 40, reduction = "pca")
-VizDimLoadings(array, dims = 50, reduction = "pca")
+ElbowPlot(merged)
+VizDimLoadings(merged, dims = 1, reduction = "pca")
+VizDimLoadings(merged, dims = 10, reduction = "pca")
+VizDimLoadings(merged, dims = 20, reduction = "pca")
+VizDimLoadings(merged, dims = 30, reduction = "pca")
+VizDimLoadings(merged, dims = 40, reduction = "pca")
+VizDimLoadings(merged, dims = 50, reduction = "pca")
 
 # visualize 2D and 3D PCA
 plot_ly(data = plot_array, x = ~PC1, y = ~PC2, color = ~Batch, text = ~Cell_ID) %>%
@@ -127,23 +126,23 @@ plot_ly(data = plot_array, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Batch, text = 
 Plot is sanity check for dataset complexity and batch effects.
 
 ```{r 5-umap, message = FALSE, warning = FALSE}
-array <- RunUMAP(array, dims = 1:50, n.epochs = 1000, verbose = FALSE)
-array <- RunUMAP(array, dims = 1:50, n.epochs = 1000, verbose = FALSE,
+merged <- RunUMAP(merged, dims = 1:50, n.epochs = 1000, verbose = FALSE)
+merged <- RunUMAP(merged, dims = 1:50, n.epochs = 1000, verbose = FALSE,
                  n.components = 3, reduction.name = "umap3d", reduction.key = "UMAP3D_",)
 
 # visualize 2D UMAP for batch
-plot_array_2d <- cbind.data.frame(as.data.frame(array[["umap"]]@cell.embeddings),
-                                  array$orig.ident,
-                                  colnames(array))
+plot_array_2d <- cbind.data.frame(as.data.frame(merged[["umap"]]@cell.embeddings),
+                                  merged$orig.ident,
+                                  colnames(merged))
 colnames(plot_array_2d) <- c("UMAP1", "UMAP2", "Batch", "Cell_ID")
 plot_ly(data = plot_array_2d, x = ~UMAP1, y = ~UMAP2, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
   layout(title = paste("2D UMAP:", id))
 
 # visualize 3D UMAP for batch
-plot_array_3d <- cbind.data.frame(as.data.frame(array[["umap3d"]]@cell.embeddings),
-                                  array$orig.ident,
-                                  colnames(array))
+plot_array_3d <- cbind.data.frame(as.data.frame(merged[["umap3d"]]@cell.embeddings),
+                                  merged$orig.ident,
+                                  colnames(merged))
 colnames(plot_array_3d) <- c("UMAP1", "UMAP2", "UMAP3", "Batch", "Cell_ID")
 plot_ly(data = plot_array_3d, x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
@@ -155,5 +154,5 @@ plot_ly(data = plot_array_3d, x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, color = ~Batch
 This is the base dataset used for downstream analysis, such as clustering, DEG identification, SCENIC, etc.
 
 ```{r 8-save_output, warning = FALSE, message = FALSE}
-saveRDS(array, file = paste0("../../datasets/merged/", id, "_merged.rds"))
+saveRDS(merged, file = paste0("../../datasets/merged/", id, "_merged.rds"))
 ```
