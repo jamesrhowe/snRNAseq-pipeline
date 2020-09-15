@@ -1,0 +1,244 @@
+---
+title: "Preprocessing: base"
+author: "James Howe"
+date: "2020-09-15"
+output: html_notebook
+params:
+  dataset: "ASt-2"
+  input_path: "../../datasets/raw/ASt-2_raw"
+---
+
+This notebook is a basic example workflow to go from raw CellRanger output to a pre-processed, Seurat-formatted dataset with low-quality cells, doublets, and outliers removed. To use for other libraries, simply change the initial parameters to the intended dataset ID and path. A library from the amygdalo-striatal transition region is used due to its relatively small size.
+
+```{r setup}
+require(Seurat)
+require(plotly)
+require(DropletUtils)
+require(scDblFinder)
+require(tidyverse)
+
+source("../misc.R")
+```
+
+## Define the arrays to load into memory
+
+The input parameters should specify the location of the raw (unfiltered) g-zipped matrix output of cellranger for preprocessing and the name of the associated dataset, which will be carried forward into downstream analyses. This step also adds an identifier to the label for each cell to ensure they maintain the identity of their respective sample, regardless of file format. Uses a dash and underscore for string splitting downstream to produce metadata for each in terms of the condition and batch.
+
+Arrays were produced using CellRanger 4.0.0 with default settings, using the mm10 2020-A reference (modified vM23/Ens98 annotation with all non- protein-coding or lncRNA annotations removed). 
+
+```{r 1-read_raw_mtx, message = FALSE, warning = FALSE}
+path <- params$input_path
+print(path)
+id <- params$dataset
+print(id)
+
+array <- Read10X(data.dir = path, strip.suffix = TRUE)
+colnames(array) <- paste0(id, "_", colnames(array))
+```
+
+## Do basic first-level cell calls using emptyDrops
+
+Uses the approach from [Lun et al., 2019](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1662-y) to filter out clearly empty droplets using a dirichlet-multinomial model. Filtration is performed with an FDR<0.001, which results in liberal cell calling to be further filtered downstream. To avoid occassional cases where obvious cells get called as background, all barcodes with >1000 UMIs are assumed non-empty. 
+
+```{r 2-cell_barcode_call, message = FALSE, warning = FALSE}
+# run emptyDrops
+barcode_filter <- emptyDrops(array, retain = 1000)
+barcode_filter$FDR[is.na(barcode_filter$FDR)] <- 1
+knee_ranks <- barcodeRanks(array)
+
+# export metrics
+plot_array <- list(cbind.data.frame(knee_ranks$rank, 
+                                 knee_ranks$total, 
+                                 barcode_filter$FDR),
+                     sum(barcode_filter$FDR < 0.001),
+                     (sum(array[,barcode_filter$FDR < 0.001]) / sum(array)),
+                     knee_ranks@metadata$knee,
+                     knee_ranks@metadata$inflection)
+names(plot_array) <- c("Metrics", "Total", "UMIs_in_cells", "Knee_threshold", "Inflection_threshold")
+colnames(plot_array$Metrics) <- c("Rank", "UMIs", "FDR")
+rownames(plot_array$Metrics) <- c(knee_ranks@rownames)
+
+# actually filter the array
+array <- array[, plot_array$Metrics$FDR < 0.001]
+
+# give first stage QC metrics
+cat(paste("Called barcodes:", length(colnames(array))), 
+    paste("Mean UMIs/called barcode:", sum(array)/length(colnames(array))),
+    paste("Mean Features/called barcode:", sum(array != 0)/length(colnames(array))),
+    paste("Percent reads in called barcodes:", plot_array$UMIs_in_cells), 
+    paste("Knee point:", plot_array$Knee_threshold),
+    paste("Inflection point:", plot_array$Inflection_threshold), sep = "\n")
+
+# remove duplicates, will crash notebook and computer if retained in plot
+plot_array$Metrics <- plot_array$Metrics[!duplicated(plot_array$Metrics$Rank),]
+plot_array$Metrics <- plot_array$Metrics[order(plot_array$Metrics$Rank),]
+
+# produce knee plot for output of emptyDrops
+plot_ly(data = plot_array$Metrics, x = ~Rank, y = ~UMIs) %>%
+  add_markers(color = ~FDR, name = "Barcodes") %>%
+  add_trace(y = plot_array$Knee_threshold, mode = "lines", name = "Knee") %>%
+  add_trace(y = plot_array$Inflection_threshold, mode = "lines", name = "Inflection") %>%
+  layout(title = paste("UMI Elbow Plot:", id), 
+         xaxis = list(type = "log"), yaxis = list(type = "log"))
+```
+
+## Format into Seurat object, add metadata for regions and quality metrics*
+
+Seurat objects are by far the most versatile and easiest to perform pre-processing on, so all subsequent steps will work with Seurat-formatted data matrices. This step also uses aforementioned string splitting to extract the condition, and it also determines mitochondrial and ribosomal read proportion.
+
+```{r 3-format_data}
+array <- CreateSeuratObject(array)
+  
+# add non-nuclear read proportion metadata
+Mito_proportion <- Matrix::colSums(array[grepl("^mt-|-mt-", rownames(array)),]) / array$nCount_RNA
+array <- AddMetaData(array, Mito_proportion, col.name = "Mito_proportion")
+
+Ribo_proportion <- Matrix::colSums(array[grepl("rpl|rps", rownames(array)),]) / array$nCount_RNA
+array <- AddMetaData(array, Ribo_proportion, col.name = "Ribo_proportion")
+
+# add group information by string splitting ID, removing replicate
+array <- AddMetaData(array, strsplit(id, "-")[[1]][1], col.name = "region")
+
+head(array@meta.data, 3)
+
+paste("Cells passing emptyDrops filter:", length(colnames(array)))
+count_all("called barcode")
+```
+
+## Perform complexity filtering
+
+Remove cells with fewer than 1000 features. Some differentially filter cells and glia, but doing both at 1000 should be far less complex, and sufficient for our purposes. 
+
+```{r 4-complexity_filter, warning = FALSE, message = FALSE}
+
+# Store pre-filter population metrics for plotting
+plot_array <- cbind.data.frame(array$nCount_RNA, 
+                               array$nFeature_RNA, 
+                               ifelse(array$nFeature_RNA < 1000, "<1000 Features", ">1000 Features"),
+                               colnames(array))
+colnames(plot_array) <- c("UMIs", "Genes", "Filter", "Cell_ID")
+
+# Remove all cells with fewer than 1000 UMIs
+array <- subset(array, cells = colnames(array)[array$nFeature_RNA >= 1000])
+
+# Output new QC metrics
+paste("Cells passing 1000-feature complexity filter:", length(colnames(array)))
+count_all("cell with >1000 features")
+
+plot_ly(data = plot_array, x = ~UMIs, y = ~Genes, color = ~Filter, text = ~Cell_ID) %>%
+  add_markers(marker = list(size = 2, sizemode = "area")) %>%
+  layout(title = paste("1000 Feature Complexity Filter:", id))
+```
+
+## Perform quality filtering: mitochondrial reads
+
+According to pipeComp from [Germain et al., 2020](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-02136-7), removing mitochondrial outliers mildly increases pipeline performance if done downstream with SCTransform. This cell filters out high outlier nuclei where their mitochondrial read proportion exceeds Q3+5xIQR. Median absolute deviation-based filtering is ideal, but the median is zero for many nuclear libraries, making it infeasible.
+
+```{r 5-mito_filter, message = FALSE, warning = FALSE}
+
+# Store pre-filter population metrics for plotting
+plot_array <- cbind.data.frame(array$nCount_RNA, 
+                               array$Mito_proportion, 
+                               ifelse(array$Mito_proportion >=
+                                        quantile(array$Mito_proportion)[4]+5*IQR(array$Mito_proportion),
+                                      ">Q3+5xIQR", "<Q3+5xIQR"),
+                               colnames(array))
+colnames(plot_array) <- c("UMIs", "Mitochondrial_proportion", "Filter", "Cell_ID")
+
+# Remove all extreme high outliers for mitochondrial reads, defined as Q3+5*IQR, which is an EXTREMELY lenient standard 
+array <- subset(array, cells = colnames(array)[array$Mito_proportion <=
+                                                 quantile(array$Mito_proportion)[4]+5*IQR(array$Mito_proportion)])
+
+paste("Cells passing mitochondrial outlier filter:", length(colnames(array)))
+count_all("cell passing mito filter")
+
+plot_ly(data = plot_array, x = ~UMIs, y = ~Mitochondrial_proportion, color = ~Filter, text = ~Cell_ID) %>%
+  add_markers(marker = list(size = 2, sizemode = "area")) %>%
+  layout(title = paste("Mitochondrial Outlier Filter:", id))
+```
+
+## Perform quality filtering: ribosomal reads
+
+According to pipeComp from [Germain et al., 2020](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-02136-7), removing ribosomal outliers mildly increases pipeline performance if done downstream with SCTransform and in tandem with removing mitochondrial read outliers. This cell filters out high outlier nuclei where their ribosomal read proportion exceeds Q3+5xIQR. Median absolute deviation-based filtering is ideal, but the median is zero for many nuclear libraries, making it infeasible in many cases.
+
+```{r 6-ribo_filter, message = FALSE, warning = FALSE}
+
+# Store pre-filter population metrics for plotting
+plot_array <- cbind.data.frame(array$nCount_RNA, 
+                               array$Ribo_proportion, 
+                               ifelse(array$Ribo_proportion >=
+                                        quantile(array$Ribo_proportion)[4]+5*IQR(array$Ribo_proportion),
+                                      ">Q3+5xIQR", "<Q3+5xIQR"),
+                               colnames(array))
+colnames(plot_array) <- c("UMIs", "Ribosomal_proportion", "Filter",  "Cell_ID")
+
+# Remove all extreme high outliers for mitochondrial reads, defined as Q3+5*IQR, which is an EXTREMELY lenient standard 
+array <- subset(array, cells = colnames(array)[array$Ribo_proportion <=
+                                                 quantile(array$Ribo_proportion)[4]+5*IQR(array$Ribo_proportion)])
+
+paste("Cells passing ribosomal outlier filter:", length(colnames(array)))
+count_all("cell passing ribo filter")
+
+plot_ly(data = plot_array, x = ~UMIs, y = ~Ribosomal_proportion, color = ~Filter, text = ~Cell_ID) %>%
+  add_markers(marker = list(size = 2, sizemode = "area")) %>%
+  layout(title = paste("Ribosomal Outlier Filter:", id))
+```
+
+## Remove doublets with scDblFinder
+
+According to pipeComp from [Germain et al., 2020](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-02136-7),
+the DoubletFinder package from [McGinnis et al., 2019](https://www.sciencedirect.com/science/article/pii/S2405471219300730) performs the best for doublet classification, creating artificial doublets and removing similar barcodes in gene expression space. scDblFinder is a more scalable implementation of this workflow. 
+
+```{r 7-doublet_filter, message = FALSE, warning = FALSE}
+sce <- as.SingleCellExperiment(array) %>%
+    scDblFinder
+
+plot_array <- cbind.data.frame(array$nCount_RNA, 
+                               array$nFeature_RNA,
+                               sce$scDblFinder.class,
+                               colnames(array))
+colnames(plot_array) <- c("UMIs", "Features", "Doublet_status", "Cell_ID")
+
+array <- subset(array, cells = colnames(array)[sce$scDblFinder.class == "singlet"])
+
+paste("Cells passing doublet filter:", length(colnames(array)))
+count_all("cell passing doublet filter")
+
+plot_ly(data = plot_array, x = ~UMIs, y = ~Features, color = ~Doublet_status, text = ~Cell_ID) %>%
+  add_markers(marker = list(size = 2, sizemode = "area")) %>%
+  layout(title = paste("Doublet Filter:", id))
+```
+
+## Perform outlier filtering
+
+Remove cells that deviate from the median count/cell by more than 5 median absolute deviations. This is mostly to remove potential doublets not detected by scDblFinder, as massive outliers could be cells of similar type loaded into the same droplet. The cutoff is extremely lenient to avoid accidentally removing real cells.
+
+```{r 8-outlier_filter, warning = FALSE, message = FALSE}
+
+# Store pre-filter population metrics for plotting
+plot_array <- cbind.data.frame(array$nCount_RNA, 
+                               array$nFeature_RNA, 
+                               ifelse(array$nCount_RNA > median(array$nCount_RNA)+5*mad(array$nCount_RNA), 
+                                      "High Outlier", "Non-outlier"),
+                               colnames(array))
+colnames(plot_array) <- c("UMIs", "Genes", "Filter", "Cell_ID")
+
+# Remove all cells with fewer than 1000 UMIs
+array <- subset(array, cells = colnames(array)[array$nFeature_RNA >= 1000])
+
+# Output new QC metrics
+paste("Final cells passing pre-processing:", length(colnames(array)))
+count_all("cell passing all filters")
+
+plot_ly(data = plot_array, x = ~UMIs, y = ~Genes, color = ~Filter) %>%
+  add_markers(marker = list(size = 2, sizemode = "area")) %>%
+  layout(title = paste("High Outlier Filter:", id))
+```
+
+## Save pre-processed matrix for use downstream
+
+The output can now be passed to the next step of the pipeline, library merging and normalization.
+
+```{r 9-save_output, warning = FALSE, message = FALSE}
+saveRDS(array, file = paste0("../../datasets/preprocessed/", id, "_preprocessed.rds"))
+```
