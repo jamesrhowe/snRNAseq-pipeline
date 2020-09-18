@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.snakmake
 # ignore all datasets
 datasets/
 # ignore all .DS_Store

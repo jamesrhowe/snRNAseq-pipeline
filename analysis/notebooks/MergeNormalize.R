@@ -1,33 +1,19 @@
----
-title: "Merging and normalization: base"
-author: "James Howe"
-date: "2020-09-15"
-output: html_notebook
----
-
-This notebook is a basic example workflow to go from preprocessed libraries of interest to a merged, normalized Seurat-formatted dataset with silent genes removed and highly variable genes identified. To use for other libraries, simply change the initial parameters for the overall group of interest, as well as the paths and merge. Libraries from the amygdalo-striatal transition region are used due to their relatively small overall size.
-
-```{r setup}
+## ----setup---------------------------------------------------------------------------------------
 require(Seurat)
 require(plotly)
 require(tidyverse)
 
-source("/misc.R")
-```
+source("../misc.R")
 
 
-## Read in data from processed libraries
-
-Combines the outputs of all preprocessed libraries into a single list. This requires pre-specified input libraries and results in a single combined array.
-
-```{r 1-merge_specified_libs, warning = FALSE, message = FALSE}
+## ----1-merge_specified_libs, warning = FALSE, message = FALSE------------------------------------
 knitr::purl("MergeNormalize.Rmd")
 
 args <- commandArgs(TRUE)
-data.path <- args[1]
+path <- args[1]
 id <- args[2]
 
-file_names <- list.files(path = data.path, pattern = "*.rds", full.names = TRUE)
+file_names <- list.files(path = "../../datasets/preprocessed/", pattern = "*.rds", full.names = TRUE)
 for (i in 1:length(file_names)){
   array[[i]] <- readRDS(file_names[i])
   
@@ -46,13 +32,9 @@ colnames(plot_array) <- c("UMIs", "Features", "Batch", "Cell_ID")
 plot_ly(data = plot_array, x = ~UMIs, y = ~Features, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
   layout(title = paste("Batch Depth:", id))
-```
 
-## Filter non-expressed genes
 
-Removal of non-expressed genes de-noises the array and improves downstream pipeline performance. This step eliminates all genes expressed in fewer than 5 cells, a very lenient cutoff.
-
-```{r 2-gene_filter, warning = FALSE, message = FALSE}
+## ----2-gene_filter, warning = FALSE, message = FALSE---------------------------------------------
 plot_array <- cbind.data.frame(Matrix::rowMeans(array@assays$RNA@counts),
                                Matrix::rowSums(array@assays$RNA@counts != 0),
                                ifelse(Matrix::rowSums(array@assays$RNA@counts != 0) > 5, 
@@ -69,13 +51,9 @@ plot_ly(data = plot_array) %>%
               marker = list(size = 2, sizemode = "area")) %>%
   layout(title = paste("5 Cell Expression Filter:", id),
          xaxis = list(type = "log"), yaxis = list(type = "log"))
-```
 
-## Normalization via SCTransform
 
-SCTransform, introduced in [Hafemeister et  al., 2019](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1), is the best performing normalization method [Germain et al., 2020](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-02136-7). It uses a variance stabilizing transform based on Pearson residuals to eliminate count depth differences and robustly approximate log-normalization. 5000 genes are selected as HVGs to ensure maximum resolution.
-
-```{r 3-sctransform, warning = FALSE, message = TRUE}
+## ----3-sctransform, warning = FALSE, message = TRUE----------------------------------------------
 # needs conserve.memory = TRUE, or else it crashes R session on laptop
 array <- SCTransform(array, variable.features.n = 5000, 
                      conserve.memory = TRUE, verbose = FALSE)
@@ -90,13 +68,9 @@ plot_ly(data = plot_array) %>%
   add_markers(x = ~Geometric_Mean, y = ~Residual_Variance, color = ~Variable_Feature, text = ~Gene_ID, 
               marker = list(size = 2, sizemode = "area")) %>%
   layout(title = paste("Variable Feature Plot:", id), xaxis = list(type = "log"))
-```
 
-## Linear dimensionality reduction with PCA
 
-Most downstream analysis steps, such as nonlinear dimensionality reduction, clustering, and respective dependent analyses, require PCA to be performed first. Seurat calculates the first 50 PCs, and we do not need to go deeper than that in most cases. According to [Germain et al., 2020](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-02136-7), the irlba version in Seurat performs best. Plot here is sanity check for batch effects, ensuring all batches align in PC space.
-
-```{r 4-pca, warning = FALSE, message = TRUE}
+## ----4-pca, warning = FALSE, message = TRUE------------------------------------------------------
 array <- RunPCA(array, verbose = FALSE)
 
 plot_array <- cbind.data.frame(array@reductions$pca@cell.embeddings[,1:3], 
@@ -121,13 +95,9 @@ plot_ly(data = plot_array, x = ~PC1, y = ~PC2, color = ~Batch, text = ~Cell_ID) 
 plot_ly(data = plot_array, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
   layout(title = paste("3D PCA:", id))
-```
 
-## Nonlinear dimensionality reduction with UMAP
 
-Plot is sanity check for dataset complexity and batch effects.
-
-```{r 5-umap, message = FALSE, warning = FALSE}
+## ----5-umap, message = FALSE, warning = FALSE----------------------------------------------------
 array <- RunUMAP(array, dims = 1:50, n.epochs = 1000, verbose = FALSE)
 array <- RunUMAP(array, dims = 1:50, n.epochs = 1000, verbose = FALSE,
                  n.components = 3, reduction.name = "umap3d", reduction.key = "UMAP3D_",)
@@ -149,12 +119,8 @@ colnames(plot_array_3d) <- c("UMAP1", "UMAP2", "UMAP3", "Batch", "Cell_ID")
 plot_ly(data = plot_array_3d, x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
   layout(title = paste("3D UMAP:", id))
-```
 
-## Save array matrix for clustering and other analyses
 
-This is the base dataset used for downstream analysis, such as clustering, DEG identification, SCENIC, etc.
+## ----8-save_output, warning = FALSE, message = FALSE---------------------------------------------
+saveRDS(array, file = paste0("../../datasets/merged/", id, "_merged.rds"))
 
-```{r 8-save_output, warning = FALSE, message = FALSE}
-saveRDS(array, file = paste0("/datasets/merged/", id, "_merged.rds"))
-```
