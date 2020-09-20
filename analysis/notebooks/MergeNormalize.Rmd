@@ -1,7 +1,7 @@
 ---
-title: "Merging and normalization: base"
+title: "Merging and normalization"
 author: "James Howe"
-date: "2020-09-15"
+date: "2020-09-20"
 output: html_notebook
 params:
   group: "ASt"
@@ -10,11 +10,11 @@ params:
 This notebook is a basic example workflow to go from preprocessed libraries of interest to a merged, normalized Seurat-formatted dataset with silent genes removed and highly variable genes identified. To use for other libraries, simply change the initial parameters for the overall group of interest, as well as the paths and merge. Libraries from the amygdalo-striatal transition region are used due to their relatively small overall size.
 
 ```{r setup}
+source("../misc.R")
+
 require(Seurat)
 require(plotly)
 require(tidyverse)
-
-source("../misc.R")
 ```
 
 ## Read in data from processed libraries
@@ -34,7 +34,7 @@ array <- merge(x= array[[1]],
                y = list(array[[2]]))
 
 paste("Total", id, "cells:", length(colnames(array)))
-count_all(paste(id, "cell"))
+count_all(paste(id, "cell"), array)
 
 plot_array <- cbind.data.frame(array$nCount_RNA, 
                                array$nFeature_RNA,
@@ -61,7 +61,7 @@ colnames(plot_array) <- c("Mean", "Total_cells", "Filter", "Gene_ID")
 
 array <- subset(array, features = which(Matrix::rowSums(array) > 5))
 
-count_all(paste(id, "cells after gene filter"))
+count_all(paste(id, "cells after gene filter"), array)
 
 plot_ly(data = plot_array) %>%
   add_markers(x = ~Mean, y = ~Total_cells, color = ~Filter, text = ~Gene_ID, 
