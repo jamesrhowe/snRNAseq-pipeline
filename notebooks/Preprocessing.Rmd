@@ -1,12 +1,13 @@
 ---
-title: "Preprocessing"
-author: "James Howe"
-date: "2020-09-20"
+author: "James Howe, Dexter Tsin"
 output: html_notebook
 params:
   dataset: "ASt-2"
-  input_path: "../../datasets/raw/"
-  output_path: "../../datasets/preprocessed/"
+  input_path: "../datasets/raw/"
+  output_path: "../datasets/preprocessed/"
+  set_title: "Preprocessing: ASt-2"
+title: "`r params$set_title`"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
 
 This notebook is a basic example workflow to go from raw CellRanger output to a pre-processed, Seurat-formatted dataset with low-quality cells, doublets, and outliers removed. To use for other libraries, simply change the initial parameters to the intended dataset ID and path. A library from the amygdalo-striatal transition region is used due to its relatively small size.
@@ -14,11 +15,11 @@ This notebook is a basic example workflow to go from raw CellRanger output to a 
 ```{r setup}
 source("../scripts/misc.R")
 
-suppressPackageStartupMessages(require(Seurat))
 suppressPackageStartupMessages(require(plotly))
 suppressPackageStartupMessages(require(DropletUtils))
 suppressPackageStartupMessages(require(scDblFinder))
 suppressPackageStartupMessages(require(tidyverse))
+suppressPackageStartupMessages(require(Seurat))
 ```
 
 ## Define the arrays to load into memory

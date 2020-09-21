@@ -8,6 +8,23 @@ rule all:
     input:
         expand("datasets/merged/{group}_merged.rds", group=GROUP)
 
+#rule cluster:
+#    input:
+#        "datasets/merged/{group}_merged.rds"
+#    conda:
+#        "envs/rmarkdown.yaml"
+#    log:
+#        "logs/cluster_{group}.txt"
+#    shell: """
+#        Rscript -e "renv::restore()"
+#        Rscript -e "rmarkdown::render(input = 'notebooks/Cluster_hicat.Rmd',
+#                                      output_file = '../results/{wildcards.group}_cluster.nb.html',
+#                                      params = list(title = 'Unsupervised Clustering: {wildcards.group}',
+#                                                    group = '{wildcards.group}',
+#                                                    input_path = '{input}',
+#                                                    output_dir = '../datasets/merged/'))" 2> {log}
+#    """
+
 rule merge:
     input:
         "datasets/temp/{group}_list.rds"
@@ -22,7 +39,8 @@ rule merge:
         Rscript -e "renv::restore()"
         Rscript -e "rmarkdown::render(input = 'notebooks/MergeNormalize.Rmd',
                                       output_file = '../results/{wildcards.group}_merged.nb.html',
-                                      params = list(group = '{wildcards.group}',
+                                      params = list(title = 'Merging and normalization: {wildcards.group}',
+                                                    group = '{wildcards.group}',
                                                     input_path = '{input}',
                                                     output_dir = '../datasets/merged/'))" 2> {log}
         """
@@ -49,7 +67,8 @@ rule preprocess:
         Rscript -e "renv::restore()"
         Rscript -e "rmarkdown::render(input = 'notebooks/Preprocessing.Rmd',
                                       output_file = '../results/{wildcards.sample}_preprocessed.nb.html',
-                                      params = list(dataset = '{wildcards.sample}',
+                                      params = list(title = 'Preprocessing: {wildcards.sample}',
+                                                    dataset = '{wildcards.sample}',
                                                     input_path = '../datasets/raw/',
                                                     output_path = '../datasets/preprocessed/'))" 2> {log}
         """

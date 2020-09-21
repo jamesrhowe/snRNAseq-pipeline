@@ -1,12 +1,13 @@
 ---
-title: "Merging and normalization"
-author: "James Howe"
-date: "2020-09-20"
+author: "James Howe, Dexter Tsin"
 output: html_notebook
 params:
   group: "ASt"
   input_path: "path/to/temp/file"
-  output_dir: "../../datasets/merged/"
+  output_dir: "../datasets/merged/"
+  set_title: "Merging and normalization: ASt"
+title: "`r params$set_title`"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
 
 This notebook is a basic example workflow to go from preprocessed libraries of interest to a merged, normalized Seurat-formatted dataset with silent genes removed and highly variable genes identified. To use for other libraries, simply change the initial parameters for the overall group of interest, as well as the paths and merge. Libraries from the amygdalo-striatal transition region are used due to their relatively small overall size.
@@ -14,9 +15,9 @@ This notebook is a basic example workflow to go from preprocessed libraries of i
 ```{r setup}
 source("../scripts/misc.R")
 
-suppressPackageStartupMessages(require(Seurat))
 suppressPackageStartupMessages(require(plotly))
 suppressPackageStartupMessages(require(tidyverse))
+suppressPackageStartupMessages(require(Seurat))
 ```
 
 ## Read in data from processed libraries
