@@ -5,16 +5,19 @@ date: "2020-09-20"
 output: html_notebook
 params:
   group: "ASt"
+  input_path: "path/to/temp/file"
+  output_dir: "../../datasets/merged/"
 ---
 
 This notebook is a basic example workflow to go from preprocessed libraries of interest to a merged, normalized Seurat-formatted dataset with silent genes removed and highly variable genes identified. To use for other libraries, simply change the initial parameters for the overall group of interest, as well as the paths and merge. Libraries from the amygdalo-striatal transition region are used due to their relatively small overall size.
 
 ```{r setup}
-source("../misc.R")
+source("../scripts/misc.R")
+renv::restore()
 
-require(Seurat)
-require(plotly)
-require(tidyverse)
+suppressPackageStartupMessages(require(Seurat))
+suppressPackageStartupMessages(require(plotly))
+suppressPackageStartupMessages(require(tidyverse))
 ```
 
 ## Read in data from processed libraries
@@ -23,15 +26,15 @@ Combines the outputs of all preprocessed libraries into a single list. This requ
 
 ```{r 1-merge_specified_libs, warning = FALSE, message = FALSE}
 id <- params$group
-array <- list()
+input <- params$input_path
+output_path <- params$output_dir 
 
-# read in the data, requires manual changes
-array[[1]] <- readRDS("../../datasets/preprocessed/ASt-1_preprocessed.rds")
-array[[2]] <- readRDS("../../datasets/preprocessed/ASt-2_preprocessed.rds")
+# read in the data
+array <- readRDS(paste0("../", input))
 
 # merge arrays, requires manual changes
 array <- merge(x= array[[1]], 
-               y = list(array[[2]]))
+               y = array[[-1]])
 
 paste("Total", id, "cells:", length(colnames(array)))
 count_all(paste(id, "cell"), array)
@@ -155,5 +158,5 @@ plot_ly(data = plot_array_3d, x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, color = ~Batch
 This is the base dataset used for downstream analysis, such as clustering, DEG identification, SCENIC, etc.
 
 ```{r 8-save_output, warning = FALSE, message = FALSE}
-saveRDS(array, file = paste0("../../datasets/merged/", id, "_merged.rds"))
+saveRDS(array, file = paste0(output_path, id, "_merged.rds"))
 ```

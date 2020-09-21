@@ -5,19 +5,21 @@ date: "2020-09-20"
 output: html_notebook
 params:
   dataset: "ASt-2"
-  input_path: "../../datasets/raw/ASt-2_raw"
+  input_path: "../../datasets/raw/"
+  output_path: "../../datasets/preprocessed/"
 ---
 
 This notebook is a basic example workflow to go from raw CellRanger output to a pre-processed, Seurat-formatted dataset with low-quality cells, doublets, and outliers removed. To use for other libraries, simply change the initial parameters to the intended dataset ID and path. A library from the amygdalo-striatal transition region is used due to its relatively small size.
 
 ```{r setup}
-source("../misc.R")
+source("../scripts/misc.R")
+renv::restore()
 
-require(Seurat)
-require(plotly)
-require(DropletUtils)
-require(scDblFinder)
-require(tidyverse)
+suppressPackageStartupMessages(require(Seurat))
+suppressPackageStartupMessages(require(plotly))
+suppressPackageStartupMessages(require(DropletUtils))
+suppressPackageStartupMessages(require(scDblFinder))
+suppressPackageStartupMessages(require(tidyverse))
 ```
 
 ## Define the arrays to load into memory
@@ -27,12 +29,12 @@ The input parameters should specify the location of the raw (unfiltered) g-zippe
 Arrays were produced using CellRanger 4.0.0 with default settings, using the mm10 2020-A reference (modified vM23/Ens98 annotation with all non- protein-coding or lncRNA annotations removed). 
 
 ```{r 1-read_raw_mtx, message = FALSE, warning = FALSE}
-path <- params$input_path
-print(path)
+input <- params$input_path
+output <- params$output_path
 id <- params$dataset
 print(id)
 
-array <- Read10X(data.dir = path, strip.suffix = TRUE)
+array <- Read10X(data.dir = paste0(input, id), strip.suffix = TRUE)
 colnames(array) <- paste0(id, "_", colnames(array))
 ```
 
@@ -221,5 +223,5 @@ plot_ly(data = plot_array, x = ~UMIs, y = ~Features, color = ~Doublet_status, te
 The output can now be passed to the next step of the pipeline, library merging and normalization.
 
 ```{r 9-save_output, warning = FALSE, message = FALSE}
-saveRDS(array, file = paste0("../../datasets/preprocessed/", id, "_preprocessed.rds"))
+saveRDS(array, file = paste0(output, id, "_preprocessed.rds"))
 ```

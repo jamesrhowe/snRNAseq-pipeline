@@ -1,0 +1,8 @@
+sample:
+- ASt-1
+- ASt-2
+
+group:
+- "ASt"
+
+threads: 4

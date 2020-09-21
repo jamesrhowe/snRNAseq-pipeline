@@ -1,9 +1,16 @@
-.Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+.Rproj.user
+.trash
+# ignore snakemake files
+.snakemake
 # ignore all datasets
 datasets/
+# ignore all logs
+logs/
+# ignore all results
+results/
 # ignore all .DS_Store
 *.DS_Store
 # ignore standalone notebook reports
