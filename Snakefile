@@ -19,6 +19,7 @@ rule merge:
     log:
         "logs/merge_{group}.txt"
     shell: """
+        Rscript -e "renv::restore()"
         Rscript -e "rmarkdown::render(input = 'notebooks/MergeNormalize.Rmd',
                                       output_file = '../results/{wildcards.group}_merged.nb.html',
                                       params = list(group = '{wildcards.group}',
@@ -45,6 +46,7 @@ rule preprocess:
     log:
         "logs/preprocess_{sample}.txt"
     shell: """
+        Rscript -e "renv::restore()"
         Rscript -e "rmarkdown::render(input = 'notebooks/Preprocessing.Rmd',
                                       output_file = '../results/{wildcards.sample}_preprocessed.nb.html',
                                       params = list(dataset = '{wildcards.sample}',

@@ -2,7 +2,6 @@
 .RData
 .Ruserdata
 .Rproj.user
-.trash
 # ignore snakemake files
 .snakemake
 # ignore all datasets

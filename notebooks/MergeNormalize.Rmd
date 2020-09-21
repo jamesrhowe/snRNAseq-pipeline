@@ -13,7 +13,6 @@ This notebook is a basic example workflow to go from preprocessed libraries of i
 
 ```{r setup}
 source("../scripts/misc.R")
-renv::restore()
 
 suppressPackageStartupMessages(require(Seurat))
 suppressPackageStartupMessages(require(plotly))
@@ -32,9 +31,14 @@ output_path <- params$output_dir
 # read in the data
 array <- readRDS(paste0("../", input))
 
+array2 <- list()
+for (i in 2:length(array)){
+  array2[[i-1]] <- array[[i]]
+}
+
 # merge arrays, requires manual changes
 array <- merge(x= array[[1]], 
-               y = array[[-1]])
+               y = array2)
 
 paste("Total", id, "cells:", length(colnames(array)))
 count_all(paste(id, "cell"), array)
