@@ -9,3 +9,4 @@ datasets/
 *.DS_Store
 # ignore standalone notebook reports
 *.nb.html
+packrat/lib*/
