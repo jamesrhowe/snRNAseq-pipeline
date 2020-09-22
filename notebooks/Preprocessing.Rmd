@@ -2,10 +2,10 @@
 author: "James Howe, Dexter Tsin"
 output: html_notebook
 params:
+  set_title: "Preprocessing: ASt-2"
   dataset: "ASt-2"
   input_path: "../datasets/raw/"
   output_path: "../datasets/preprocessed/"
-  set_title: "Preprocessing: ASt-2"
 title: "`r params$set_title`"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
