@@ -5,7 +5,8 @@ params:
   set_title: "Merging and normalization: ASt"
   group: "ASt"
   input_path: "path/to/temp/file"
-  output_dir: "../datasets/merged/"
+  output_dir: "datasets/merged/"
+  suffix: "merged"
 title: "`r params$set_title`"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
@@ -13,6 +14,11 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 This notebook is a basic example workflow to go from preprocessed libraries of interest to a merged, normalized Seurat-formatted dataset with silent genes removed and highly variable genes identified. To use for other libraries, simply change the initial parameters for the overall group of interest, as well as the paths and merge. Libraries from the amygdalo-striatal transition region are used due to their relatively small overall size.
 
 ```{r setup}
+id <- params$group
+input <- params$input_path
+output_path <- params$output_dir
+suffix <- params$suffix
+
 source("../scripts/misc.R")
 
 suppressPackageStartupMessages(require(plotly))
@@ -24,25 +30,18 @@ suppressPackageStartupMessages(require(Seurat))
 
 Combines the outputs of all preprocessed libraries into a single list. This requires pre-specified input libraries and results in a single combined array.
 
-```{r 1-merge_specified_libs, warning = FALSE, message = FALSE}
-id <- params$group
-input <- params$input_path
-output_path <- params$output_dir 
-
-# read in the data
+```{r 1-load_input, warning = FALSE, message = FALSE}
+# read in the data for either a list (if merging) or an array (if subset normalizing)
 array <- readRDS(paste0("../", input))
 
-array2 <- list()
-for (i in 2:length(array)){
-  array2[[i-1]] <- array[[i]]
+if (class(array) == "list"){
+  array2 <- list()
+  for (i in 2:length(array)){
+    array2[[i-1]] <- array[[i]]
+  }
+  array <- merge(x= array[[1]], 
+                 y = array2)
 }
-
-# merge arrays, requires manual changes
-array <- merge(x= array[[1]], 
-               y = array2)
-
-paste("Total", id, "cells:", length(colnames(array)))
-count_all(paste(id, "cell"), array)
 
 plot_array <- cbind.data.frame(array$nCount_RNA, 
                                array$nFeature_RNA,
@@ -52,7 +51,8 @@ colnames(plot_array) <- c("UMIs", "Features", "Batch", "Cell_ID")
 
 plot_ly(data = plot_array, x = ~UMIs, y = ~Features, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
-  layout(title = paste("Batch Depth:", id))
+  layout(title = paste("Batch Depth:", id)) %>%
+  toWebGL()
 ```
 
 ## Filter non-expressed genes
@@ -75,7 +75,8 @@ plot_ly(data = plot_array) %>%
   add_markers(x = ~Mean, y = ~Total_cells, color = ~Filter, text = ~Gene_ID, 
               marker = list(size = 2, sizemode = "area")) %>%
   layout(title = paste("5 Cell Expression Filter:", id),
-         xaxis = list(type = "log"), yaxis = list(type = "log"))
+         xaxis = list(type = "log"), yaxis = list(type = "log")) %>%
+  toWebGL()
 ```
 
 ## Normalization via SCTransform
@@ -96,7 +97,8 @@ colnames(plot_array) <- c("Geometric_Mean", "Residual_Variance", "Variable_Featu
 plot_ly(data = plot_array) %>%
   add_markers(x = ~Geometric_Mean, y = ~Residual_Variance, color = ~Variable_Feature, text = ~Gene_ID, 
               marker = list(size = 2, sizemode = "area")) %>%
-  layout(title = paste("Variable Feature Plot:", id), xaxis = list(type = "log"))
+  layout(title = paste("Variable Feature Plot:", id), xaxis = list(type = "log")) %>%
+  toWebGL()
 ```
 
 ## Linear dimensionality reduction with PCA
@@ -123,11 +125,13 @@ VizDimLoadings(array, dims = 50, reduction = "pca")
 # visualize 2D and 3D PCA
 plot_ly(data = plot_array, x = ~PC1, y = ~PC2, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
-  layout(title = paste("2D PCA:", id))
+  layout(title = paste("2D PCA:", id)) %>%
+  toWebGL()
 
 plot_ly(data = plot_array, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
-  layout(title = paste("3D PCA:", id))
+  layout(title = paste("3D PCA:", id)) %>%
+  toWebGL()
 ```
 
 ## Nonlinear dimensionality reduction with UMAP
@@ -142,26 +146,38 @@ array <- RunUMAP(array, dims = 1:50, n.epochs = 1000, verbose = FALSE,
 # visualize 2D UMAP for batch
 plot_array_2d <- cbind.data.frame(as.data.frame(array[["umap"]]@cell.embeddings),
                                   array$orig.ident,
+                                  array$region,
                                   colnames(array))
-colnames(plot_array_2d) <- c("UMAP1", "UMAP2", "Batch", "Cell_ID")
+colnames(plot_array_2d) <- c("UMAP1", "UMAP2", "Batch", "Region", "Cell_ID")
 plot_ly(data = plot_array_2d, x = ~UMAP1, y = ~UMAP2, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
-  layout(title = paste("2D UMAP:", id))
+  layout(title = paste("2D UMAP:", id)) %>%
+  toWebGL()
+plot_ly(data = plot_array_2d, x = ~UMAP1, y = ~UMAP2, color = ~Region, text = ~Cell_ID) %>%
+  add_markers(marker = list(size = 2, sizemode = "area")) %>%
+  layout(title = paste("2D UMAP:", id)) %>%
+  toWebGL()
 
 # visualize 3D UMAP for batch
 plot_array_3d <- cbind.data.frame(as.data.frame(array[["umap3d"]]@cell.embeddings),
                                   array$orig.ident,
+                                  array$region,
                                   colnames(array))
-colnames(plot_array_3d) <- c("UMAP1", "UMAP2", "UMAP3", "Batch", "Cell_ID")
+colnames(plot_array_3d) <- c("UMAP1", "UMAP2", "UMAP3", "Batch", "Region", "Cell_ID")
 plot_ly(data = plot_array_3d, x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, color = ~Batch, text = ~Cell_ID) %>%
   add_markers(marker = list(size = 2, sizemode = "area")) %>%
-  layout(title = paste("3D UMAP:", id))
+  layout(title = paste("3D UMAP:", id)) %>%
+  toWebGL()
+plot_ly(data = plot_array_3d, x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, color = ~Region, text = ~Cell_ID) %>%
+  add_markers(marker = list(size = 2, sizemode = "area")) %>%
+  layout(title = paste("3D UMAP:", id)) %>%
+  toWebGL()
 ```
 
 ## Save merged matrix for clustering and other analyses
 
 This is the base dataset used for downstream analysis, such as clustering, DEG identification, SCENIC, etc.
 
-```{r 8-save_output, warning = FALSE, message = FALSE}
-saveRDS(array, file = paste0(output_path, id, "_merged.rds"))
+```{r 6-save_output, warning = FALSE, message = FALSE}
+saveRDS(array, file = paste0("../", output_path, id, "_", suffix, ".rds"))
 ```

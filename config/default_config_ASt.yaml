@@ -3,6 +3,6 @@ sample:
 - ASt-2
 
 group:
-- "ASt"
+- ASt
 
 threads: 4
